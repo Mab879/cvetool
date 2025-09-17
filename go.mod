@@ -1,5 +1,4 @@
-module github.com/quay/clair-action
-
+module github.com/ComplianceAsCode/cvetool
 go 1.24
 
 require (

@@ -19,9 +19,9 @@ import (
 	"github.com/quay/claircore/pkg/tarfs"
 	"github.com/urfave/cli/v2"
 
-	"github.com/quay/clair-action/datastore"
-	"github.com/quay/clair-action/image"
-	"github.com/quay/clair-action/output"
+	datastore "github.com/ComplianceAsCode/cvetool/datastore"
+	image "github.com/ComplianceAsCode/cvetool/image"
+	output "github.com/ComplianceAsCode/cvetool/output"
 )
 
 var defaultDBPath = filepath.Join(os.TempDir(), "matcher.db")

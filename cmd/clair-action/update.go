@@ -5,11 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ComplianceAsCode/cvetool/datastore"
 	"github.com/quay/claircore/libvuln"
 	_ "github.com/quay/claircore/updater/defaults"
 	"github.com/urfave/cli/v2"
-
-	"github.com/quay/clair-action/datastore"
 )
 
 var updateCmd = &cli.Command{

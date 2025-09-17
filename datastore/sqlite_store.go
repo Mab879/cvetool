@@ -16,9 +16,9 @@ import (
 	"strings"
 	"time"
 
+	migrations "github.com/ComplianceAsCode/cvetool/migrations"
 	"github.com/google/uuid"
 	version "github.com/hashicorp/go-version"
-	"github.com/quay/clair-action/migrations"
 	"github.com/quay/claircore"
 	"github.com/quay/claircore/datastore"
 	"github.com/quay/claircore/libvuln/driver"

@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/quay/clair-action/output"
+	"github.com/ComplianceAsCode/cvetool/output"
 	"github.com/quay/claircore"
 	"github.com/urfave/cli/v2"
 )
