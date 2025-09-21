@@ -23,9 +23,9 @@ var (
 
 func main() {
 	app := &cli.App{
-		Name:                 "clair-action",
+		Name:                 "cvetool",
 		Version:              Version,
-		Usage:                "clair-action --help",
+		Usage:                "cvetool --help",
 		Description:          "A CLI application for running Clair v4 locally",
 		EnableBashCompletion: true,
 		Before: func(c *cli.Context) error {

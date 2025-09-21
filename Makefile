@@ -5,7 +5,7 @@ vendor/modules.txt: go.mod
 	go mod vendor
 
 .PHONY: build
-build: clair-action
+build: cvetool
 
-clair-action: vendor
+cvetool: vendor
 	go build ./cmd/...
