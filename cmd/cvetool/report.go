@@ -63,6 +63,12 @@ var reportCmd = &cli.Command{
 	Action:  report,
 	Flags: []cli.Flag{
 		&cli.PathFlag{
+			Name:    "root-path",
+			Value:   "",
+			Usage:   "where to look for the local filesystem root",
+			EnvVars: []string{"ROOT_PATH"},
+		},
+		&cli.PathFlag{
 			Name:    "image-path",
 			Value:   "",
 			Usage:   "where to look for the saved image tar",
@@ -117,6 +123,7 @@ func report(c *cli.Context) error {
 
 	var (
 		// All arguments
+		rootPath         = c.String("root-path")
 		imgRef          = c.String("image-ref")
 		imgPath         = c.String("image-path")
 		dbPath          = c.String("db-path")
@@ -145,6 +152,13 @@ func report(c *cli.Context) error {
 		img, err = image.NewDockerLocalImage(ctx, imgPath, os.TempDir())
 		if err != nil {
 			return fmt.Errorf("error getting image information: %v", err)
+		}
+	case rootPath != "":
+		fa = &LocalFetchArena{}
+		var err error
+		img, err = image.NewFileSystemImage(ctx, rootPath)
+		if err != nil {
+			return fmt.Errorf("error getting filesystem information: %v", err)
 		}
 	default:
 		return fmt.Errorf("no $IMAGE_PATH / --image-path or $IMAGE_REF / --image-ref set")
