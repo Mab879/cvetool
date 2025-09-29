@@ -22,7 +22,7 @@ Run
 ```
 $ ./cvetool update --db-path=./matcher.db
 ```
-to create (or update) the DB. The information is stored in SQlite format.
+to create (or update) the DB (SQLite).
 
 The `--db-path` argument is the path to the database location. If the parameter is ommited the tool
 creates ephemeral (in-memory) database.
@@ -33,12 +33,14 @@ The initial update procedure could take up to 30 minutes. Further updates will b
 
 Run
 ```
-$ ./cvetool -l debug report --root-path=/usr --db-path=./matcher.db
+$ ./cvetool report --root-path=/usr --db-path=./matcher.db
 ```
 to scan the system and generate vulnerabilities report.
 
-The `--root-path` argument defines the root directory of the target file system. Currently the tool 
-fails if there is a problem with accessing files. For local system is recommended to start from `/usr`
-and run the tool as root.
+The `--root-path` argument defines root directory of the target file system. Currently the tool 
+fails if there is a problem with accessing files (https://github.com/ComplianceAsCode/cvetool/issues/9).
+Therefore for local system it is recommended to set the argument to `/usr` and run the tool as root user (sudo).
 
-Default report format is `clair`. It could be changed with the `--format` argument.
+Default report format is `clair` (JSON). It could be changed with the `--format` argument.
+
+Run the tool with `--help` argument for more information.
