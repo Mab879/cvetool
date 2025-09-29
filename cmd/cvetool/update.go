@@ -43,7 +43,10 @@ func update(c *cli.Context) error {
 		Store:                    matcherStore,
 		Locker:                   NewLocalLockSource(),
 		DisableBackgroundUpdates: true,
+		UpdateRetention:          3,
 		UpdateWorkers:            1,
+		// FIXME: We need the enrichment updater as well (cvss)
+		//UpdaterSets: []string{"rhel-vex"},
 	}
 
 	lv, err := libvuln.New(ctx, matcherOpts)

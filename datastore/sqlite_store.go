@@ -19,6 +19,7 @@ import (
 	migrations "github.com/ComplianceAsCode/cvetool/migrations"
 	"github.com/google/uuid"
 	version "github.com/hashicorp/go-version"
+	"github.com/jackc/pgx/v5"
 	"github.com/quay/claircore"
 	"github.com/quay/claircore/datastore"
 	"github.com/quay/claircore/libvuln/driver"
@@ -43,7 +44,7 @@ func (v *intVersion) String() string {
 func (v *intVersion) FromString(str string) error {
 	str = strings.Trim(str, "{}")
 	sl := strings.Split(str, ",")
-	for i := 0; i < len(sl); i++ {
+	for i := range sl {
 		p, err := strconv.ParseInt(sl[i], 10, 32)
 		if err != nil {
 			return err
@@ -137,39 +138,86 @@ func (ms *sqliteMatcherStore) UpdateEnrichments(ctx context.Context, updaterName
 
 // UpdateEnrichmentsIter performs the same operation as UpdateEnrichments, but
 // accepting an iterator function.
-func (ms *sqliteMatcherStore) UpdateEnrichmentsIter(ctx context.Context, updaterName string, _ driver.Fingerprint, enIter datastore.EnrichmentIter) (uuid.UUID, error) {
+func (ms *sqliteMatcherStore) UpdateEnrichmentsIter(ctx context.Context, updaterName string, fp driver.Fingerprint, enIter datastore.EnrichmentIter) (uuid.UUID, error) {
 	const (
+		create = `
+			INSERT
+			INTO
+				update_operation (updater, fingerprint, kind, ref)
+			VALUES
+				($1, $2, 'enrichment', $3)
+			RETURNING
+				id;`
 		insert = `
-	INSERT
-	INTO
-		enrichment (hash_kind, hash, updater, tags, data)
-	VALUES
-		($1, $2, $3, json_array($4), $5)
-	ON CONFLICT
-		(hash_kind, hash)
-	DO
-		NOTHING;`
+			INSERT
+			INTO
+				enrichment (hash_kind, hash, updater, tags, data)
+			VALUES
+				($1, $2, $3, json_array($4), $5)
+			ON CONFLICT
+				(hash_kind, hash)
+			DO NOTHING;`
+		assoc = `
+			INSERT
+			INTO
+				uo_enrich (enrich, updater, uo)
+			VALUES
+			(
+				(
+					SELECT
+						id
+					FROM
+						enrichment
+					WHERE
+						hash_kind = $1
+						AND hash = $2
+				),
+				$3,
+				$4
+			)
+			ON CONFLICT DO NOTHING;`
 	)
 
 	var ref = uuid.New()
+	var id uint64
+	var enCt int
+
 	tx, err := ms.conn.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return uuid.Nil, err
 	}
 	defer tx.Rollback()
 
+	if err := tx.QueryRowContext(ctx, create, updaterName, string(fp), ref.String()).Scan(&id); err != nil {
+		return uuid.Nil, fmt.Errorf("failed to create update_operation: %w", err)
+	}
+	zlog.Debug(ctx).
+		Str("ref", ref.String()).
+		Msg("update_operation created")
+
 	enIter(func(es *driver.EnrichmentRecord, iterErr error) bool {
 		if iterErr != nil {
 			err = fmt.Errorf("iterating on enrichments: %w", iterErr)
 			return false
 		}
+		enCt++
 
 		hashKind, hash := hashEnrichment(es)
 		_, err = tx.ExecContext(ctx, insert,
 			hashKind, hash, updaterName, strings.Join(es.Tags, ","), es.Enrichment,
 		)
 		if err != nil {
+			zlog.Error(ctx).Err(err)
 			err = fmt.Errorf("failed to insert enrichment: %w", err)
+			return false
+		}
+
+		_, err = tx.ExecContext(ctx, assoc,
+			hashKind, hash, updaterName, id,
+		)
+		if err != nil {
+			zlog.Error(ctx).Err(err)
+			err = fmt.Errorf("failed to assoc enrichment: %w", err)
 			return false
 		}
 
@@ -183,6 +231,16 @@ func (ms *sqliteMatcherStore) UpdateEnrichmentsIter(ctx context.Context, updater
 	if err := tx.Commit(); err != nil {
 		return uuid.Nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+
+	if _, err = ms.conn.ExecContext(ctx, "ANALYZE enrichment"); err != nil {
+		zlog.Error(ctx).Err(err)
+		return uuid.Nil, fmt.Errorf("could not ANALYZE enrichment: %w", err)
+	}
+
+	zlog.Debug(ctx).
+		Stringer("ref", ref).
+		Int("inserted", enCt).
+		Msg("update_operation committed")
 
 	return ref, nil
 }
@@ -232,6 +290,7 @@ func getMetadata(ctx context.Context, tx *sql.Tx, kind string, val string) (int6
 // vulnerabilities, and ensures vulnerabilities from previous updates are
 // not queried by clients.
 func (ms *sqliteMatcherStore) UpdateVulnerabilities(ctx context.Context, updaterName string, fp driver.Fingerprint, vs []*claircore.Vulnerability) (uuid.UUID, error) {
+	zlog.Debug(ctx).Msg(">>> UpdateVulnerabilities")
 	vsIter := func(yield func(*claircore.Vulnerability, error) bool) {
 		for i := range vs {
 			if !yield(vs[i], nil) {
@@ -245,8 +304,35 @@ func (ms *sqliteMatcherStore) UpdateVulnerabilities(ctx context.Context, updater
 
 // UpdateVulnerabilitiesIter performs the same operation as
 // UpdateVulnerabilities, but accepting an iterator function.
-func (ms *sqliteMatcherStore) UpdateVulnerabilitiesIter(ctx context.Context, _ string, _ driver.Fingerprint, vnIter datastore.VulnerabilityIter) (uuid.UUID, error) {
+func (ms *sqliteMatcherStore) UpdateVulnerabilitiesIter(ctx context.Context, updater string, fp driver.Fingerprint, vsIter datastore.VulnerabilityIter) (uuid.UUID, error) {
+	return ms.updateVulnerabilities(ctx, updater, fp, vsIter, nil)
+}
+
+func (ms *sqliteMatcherStore) updateVulnerabilities(ctx context.Context, updater string, fingerprint driver.Fingerprint, vulnIter datastore.VulnerabilityIter, delIter datastore.Iter[string]) (uuid.UUID, error) {
 	const (
+		// Create makes a new update operation and returns the reference and ID.
+		create = `INSERT INTO update_operation (updater, fingerprint, kind, ref) VALUES ($1, $2, 'vulnerability', $3) RETURNING id;`
+		// Select existing vulnerabilities that are associated with the latest_update_operation.
+		selectExisting = `
+		SELECT
+			"name",
+			"vuln"."id"
+		FROM
+			"vuln"
+			INNER JOIN "uo_vuln" ON ("vuln"."id" = "uo_vuln"."vuln")
+			INNER JOIN "latest_update_operations" ON (
+			"latest_update_operations"."id" = "uo_vuln"."uo"
+			)
+		WHERE
+			(
+			"latest_update_operations"."kind" = 'vulnerability'
+			)
+		AND
+			(
+			"vuln"."updater" = $1
+			)`
+		// assocExisting associates existing vulnerabilities with new update operations
+		assocExisting = `INSERT INTO uo_vuln (uo, vuln) VALUES ($1, $2) ON CONFLICT DO NOTHING;`
 		// Insert attempts to create a new vulnerability. It fails silently.
 		insert = `
 		INSERT INTO vuln (
@@ -265,16 +351,96 @@ func (ms *sqliteMatcherStore) UpdateVulnerabilitiesIter(ctx context.Context, _ s
 		  $26, $27, $28, $29
 		)
 		ON CONFLICT (hash_kind, hash) DO NOTHING;`
+		assoc = `
+		INSERT INTO uo_vuln (uo, vuln) VALUES (
+			$3,
+			(SELECT id FROM vuln WHERE hash_kind = $1 AND hash = $2))
+		ON CONFLICT DO NOTHING;`
 	)
 
+	var uoID uint64
 	var ref = uuid.New()
+
 	tx, err := ms.conn.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return uuid.Nil, err
 	}
 	defer tx.Rollback()
 
-	vnIter(func(vuln *claircore.Vulnerability, iterErr error) bool {
+	delta := delIter != nil
+	oldVulns := make(map[string][]string)
+
+	if delta {
+		zlog.Debug(ctx).Msg("updateVulnerabilities (delta, get)")
+		// Get existing vulns
+		rows, err := ms.conn.QueryContext(ctx, selectExisting, updater)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("failed to get existing vulns: %w", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var tmpID int64
+			var ID, name string
+			err := rows.Scan(
+				&name,
+				&tmpID,
+			)
+
+			ID = strconv.FormatInt(tmpID, 10)
+			if err != nil {
+				return uuid.Nil, fmt.Errorf("failed to scan vulnerability: %w", err)
+			}
+			oldVulns[name] = append(oldVulns[name], ID)
+		}
+		if err := rows.Err(); err != nil {
+			return uuid.Nil, fmt.Errorf("error reading existing vulnerabilities: %w", err)
+		}
+
+		if len(oldVulns) > 0 {
+			vulnIter(func(v *claircore.Vulnerability, _ error) bool {
+				// If we have an existing vuln in the new batch
+				// delete it from the oldVulns map so it doesn't
+				// get associated with the new update_operation.
+				delete(oldVulns, v.Name)
+				return true
+			})
+			delIter(func(delName string, _ error) bool {
+				// If we have an existing vuln that has been signaled
+				// as deleted by the updater then delete it so it doesn't
+				// get associated with the new update_operation.
+				delete(oldVulns, delName)
+				return true
+			})
+		}
+	}
+
+	// Create new update operation
+	if err := tx.QueryRowContext(ctx, create, updater, fingerprint, ref.String()).Scan(&uoID); err != nil {
+		zlog.Error(ctx).Err(err)
+		return uuid.Nil, fmt.Errorf("failed to create update_operation: %w", err)
+	}
+	zlog.Debug(ctx).
+		Str("ref", ref.String()).
+		Msg("created update operation")
+
+	if delta {
+		zlog.Debug(ctx).Msg("updateVulnerabilities (delta, assoc)")
+		// Associate already existing vulnerabilities with new update_operation.
+		for _, vs := range oldVulns {
+			for _, vID := range vs {
+				_, err := tx.ExecContext(ctx, assocExisting, uoID, vID)
+				if err != nil {
+					return uuid.Nil, fmt.Errorf("could not update old vulnerability with new UO: %w", err)
+				}
+			}
+		}
+	}
+
+	skipCt := 0
+	vulnCt := 0
+
+	vulnIter(func(vuln *claircore.Vulnerability, iterErr error) bool {
 		if iterErr != nil {
 			err = fmt.Errorf("iterating on vulnerabilities: %w", iterErr)
 			return false
@@ -293,7 +459,9 @@ func (ms *sqliteMatcherStore) UpdateVulnerabilitiesIter(ctx context.Context, _ s
 			err = fmt.Errorf("failed to get name: %w", err)
 			return false
 		}
+		vulnCt++
 		if vuln.Package == nil || vuln.Package.Name == "" {
+			skipCt++
 			return true
 		}
 
@@ -331,6 +499,12 @@ func (ms *sqliteMatcherStore) UpdateVulnerabilitiesIter(ctx context.Context, _ s
 	if err := tx.Commit(); err != nil {
 		return uuid.Nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
+
+	zlog.Debug(ctx).
+		Str("ref", ref.String()).
+		Int("skipped", skipCt).
+		Int("inserted", vulnCt-skipCt).
+		Msg("update_operation committed")
 
 	return ref, nil
 }
@@ -390,7 +564,7 @@ func rangefmt(r *claircore.Range) (kind *string, lower, upper string) {
 	b := make([]byte, 0, 16) // 16 byte wide scratch buffer
 
 	buf.WriteByte('{')
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if i != 0 {
 			buf.WriteByte(',')
 		}
@@ -401,7 +575,7 @@ func rangefmt(r *claircore.Range) (kind *string, lower, upper string) {
 	buf.Reset()
 	v = &r.Upper
 	buf.WriteByte('{')
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if i != 0 {
 			buf.WriteByte(',')
 		}
@@ -422,6 +596,8 @@ func (ms *sqliteMatcherStore) Initialized(_ context.Context) (bool, error) {
 // this maybe a one to many relationship. each package is assumed to have an ID.
 // a map of Package.ID => Vulnerabilities is returned.
 func (ms *sqliteMatcherStore) Get(ctx context.Context, records []*claircore.IndexRecord, opts datastore.GetOpts) (map[string][]*claircore.Vulnerability, error) {
+	zlog.Debug(ctx).Msg(">>> sqliteMatcherStore.Get")
+
 	tx, err := ms.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -521,15 +697,38 @@ func makePlaceholders(startIndex, length int) string {
 	return "(" + strings.TrimRight(str, ",") + ")"
 }
 
+func formatStringArray(s []string) string {
+	return strings.Join(s, "','")
+}
+
 func (ms *sqliteMatcherStore) GetEnrichment(ctx context.Context, kind string, tags []string) ([]driver.EnrichmentRecord, error) {
 	var query = `
+	WITH
+			latest
+				AS (
+					SELECT
+						id
+					FROM
+						latest_update_operations
+					WHERE
+						updater = $1
+					AND
+						kind = 'enrichment'
+					LIMIT 1
+				)
 	SELECT
 		e.tags, e.data
 	FROM
 		enrichment AS e,
+		uo_enrich AS uo,
+		latest,
 		json_each(e.tags)
 	WHERE
-		json_each.value IN ` + makePlaceholders(2, len(tags)) + ";"
+		uo.uo = latest.id
+		AND uo.enrich = e.id
+		AND json_each.value IN ` + makePlaceholders(2, len(tags)) + ";"
+
+	zlog.Warn(ctx).Msg(">>> GetEnrichment")
 
 	tx, err := ms.conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -538,12 +737,13 @@ func (ms *sqliteMatcherStore) GetEnrichment(ctx context.Context, kind string, ta
 	defer tx.Rollback()
 
 	results := make([]driver.EnrichmentRecord, 0, 8) // Guess at capacity.
-	args := []interface{}{kind}
+	args := []any{kind}
 	for _, v := range tags {
 		args = append(args, v)
 	}
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
+		zlog.Error(ctx).Err(err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -572,20 +772,101 @@ func (ms *sqliteMatcherStore) GetEnrichment(ctx context.Context, kind string, ta
 // The returned map is keyed by Updater implementation's unique names.
 //
 // If no updaters are specified, all UpdateOperations are returned.
-func (ms *sqliteMatcherStore) GetUpdateOperations(ctx context.Context, kind driver.UpdateKind, updaters ...string) (map[string][]driver.UpdateOperation, error) {
-	return nil, nil
+func (ms *sqliteMatcherStore) GetUpdateOperations(ctx context.Context, kind driver.UpdateKind, updater ...string) (map[string][]driver.UpdateOperation, error) {
+	const (
+		query              = `SELECT ref, updater, fingerprint, date FROM update_operation WHERE updater IN ($1) ORDER BY id DESC;`
+		queryVulnerability = `SELECT ref, updater, fingerprint, date FROM update_operation WHERE updater IN ($1) AND kind = 'vulnerability' ORDER BY id DESC;`
+		queryEnrichment    = `SELECT ref, updater, fingerprint, date FROM update_operation WHERE updater IN ($1) AND kind = 'enrichment' ORDER BY id DESC;`
+		getUpdaters        = `SELECT DISTINCT(updater) FROM update_operation;`
+	)
+
+	tx, err := ms.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+	out := make(map[string][]driver.UpdateOperation)
+
+	// Get distinct updaters from database if nothing specified.
+	if len(updater) == 0 {
+		updater = []string{}
+
+		rows, err := tx.QueryContext(ctx, getUpdaters)
+		switch {
+		case err == nil:
+		case errors.Is(err, pgx.ErrNoRows):
+			return out, nil
+		default:
+			return nil, fmt.Errorf("failed to get distinct updates: %w", err)
+		}
+
+		defer rows.Close() // OK to defer and call, as per docs.
+
+		for rows.Next() {
+			var u string
+			err := rows.Scan(&u)
+			if err != nil {
+				return nil, fmt.Errorf("failed to scan updater: %w", err)
+			}
+			updater = append(updater, u)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	var q string
+	switch kind {
+	case "":
+		q = query
+	case driver.EnrichmentKind:
+		q = queryEnrichment
+	case driver.VulnerabilityKind:
+		q = queryVulnerability
+	}
+
+	rows, err := tx.QueryContext(ctx, q, formatStringArray(updater))
+	switch {
+	case err == nil:
+	case errors.Is(err, pgx.ErrNoRows):
+		return out, nil
+	default:
+		return nil, fmt.Errorf("failed to get distinct updates: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var uo driver.UpdateOperation
+		err := rows.Scan(
+			&uo.Ref,
+			&uo.Updater,
+			&uo.Fingerprint,
+			&uo.Date,
+		)
+		if err != nil {
+			zlog.Error(ctx).Err(err)
+			return nil, fmt.Errorf("failed to scan update operation for updater %q: %w", uo.Updater, err)
+		}
+		out[uo.Updater] = append(out[uo.Updater], uo)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 // GetLatestUpdateRefs reports the latest update reference for every known
 // updater.
-func (ms *sqliteMatcherStore) GetLatestUpdateRefs(context.Context, driver.UpdateKind) (map[string][]driver.UpdateOperation, error) {
-	panic("not implemented") // TODO: Implement
+func (ms *sqliteMatcherStore) GetLatestUpdateRefs(ctx context.Context, kind driver.UpdateKind) (map[string][]driver.UpdateOperation, error) {
+	panic("GetLatestUpdateRefs is not implemented!")
 }
 
 // GetLatestUpdateRef reports the latest update reference of any known
 // updater.
-func (ms *sqliteMatcherStore) GetLatestUpdateRef(context.Context, driver.UpdateKind) (uuid.UUID, error) {
-	panic("not implemented") // TODO: Implement
+func (ms *sqliteMatcherStore) GetLatestUpdateRef(ctx context.Context, kind driver.UpdateKind) (uuid.UUID, error) {
+	panic("GetLatestUpdateRef is not implemented!")
 }
 
 // GetUpdateOperationDiff reports the UpdateDiff of the two referenced
@@ -594,7 +875,8 @@ func (ms *sqliteMatcherStore) GetLatestUpdateRef(context.Context, driver.UpdateK
 // In diff(1) terms, this is like
 //
 //	diff prev cur
-func (ms *sqliteMatcherStore) GetUpdateDiff(context.Context, uuid.UUID, uuid.UUID) (*driver.UpdateDiff, error) {
+func (ms *sqliteMatcherStore) GetUpdateDiff(ctx context.Context, prev uuid.UUID, cur uuid.UUID) (*driver.UpdateDiff, error) {
+	zlog.Warn(ctx).Msg("sqliteMatcherStore.GetUpdateDiff is not implemented!")
 	return nil, nil
 }
 
@@ -604,7 +886,8 @@ func (ms *sqliteMatcherStore) GetUpdateDiff(context.Context, uuid.UUID, uuid.UUI
 // with the UpdateOperation.
 //
 // The number of UpdateOperations deleted is returned.
-func (ms *sqliteMatcherStore) DeleteUpdateOperations(context.Context, ...uuid.UUID) (int64, error) {
+func (ms *sqliteMatcherStore) DeleteUpdateOperations(ctx context.Context, uuids ...uuid.UUID) (int64, error) {
+	zlog.Warn(ctx).Msg("sqliteMatcherStore.DeleteUpdateOperations is not implemented!")
 	return 0, nil
 }
 
@@ -615,22 +898,150 @@ func (ms *sqliteMatcherStore) DeleteUpdateOperations(context.Context, ...uuid.UU
 //
 // The returned int64 value indicates the remaining number of update operations needing GC.
 // Running this method till the returned value is 0 accomplishes a full GC of the vulnstore.
-func (ms *sqliteMatcherStore) GC(context.Context, int) (int64, error) {
+func (ms *sqliteMatcherStore) GC(ctx context.Context, count int) (int64, error) {
+	zlog.Warn(ctx).Msg("sqliteMatcherStore.GC is not implemented!")
 	return 0, nil
 }
 
 // RecordUpdaterStatus records that an updater is up to date with vulnerabilities at this time
-func (ms *sqliteMatcherStore) RecordUpdaterStatus(context.Context, string, time.Time, driver.Fingerprint, error) error {
+func (ms *sqliteMatcherStore) RecordUpdaterStatus(ctx context.Context, updaterName string, updateTime time.Time, fingerprint driver.Fingerprint, updaterError error) error {
+	zlog.Debug(ctx).Msg(">>> RecordUpdaterStatus")
+	const (
+		// upsertSuccessfulUpdate inserts or updates a record of the last time an updater successfully checked for new vulns
+		upsertSuccessfulUpdate = `INSERT INTO updater_status (
+			updater_name,
+			last_attempt,
+			last_success,
+			last_run_succeeded,
+			last_attempt_fingerprint
+		) VALUES (
+			$1,
+			$2,
+			$2,
+			'true',
+			$3
+		)
+		ON CONFLICT (updater_name) DO UPDATE
+		SET last_attempt = $2,
+			last_success = $2,
+			last_run_succeeded = 'true',
+			last_attempt_fingerprint = $3
+		RETURNING updater_name;`
+
+		// upsertFailedUpdate inserts or updates a record of the last time an updater attempted but failed to check for new vulns
+		upsertFailedUpdate = `INSERT INTO updater_status (
+					updater_name,
+					last_attempt,
+					last_run_succeeded,
+					last_attempt_fingerprint,
+					last_error
+				) VALUES (
+					$1,
+					$2,
+					'false',
+					$3,
+					$4
+				)
+				ON CONFLICT (updater_name) DO UPDATE
+				SET last_attempt = $2,
+					last_run_succeeded = 'false',
+					last_attempt_fingerprint = $3,
+					last_error = $4
+				RETURNING updater_name;`
+	)
+
+	ctx = zlog.ContextWithValues(ctx,
+		"component", "internal/vulnstore/sqlite/recordUpdaterStatus")
+
+	tx, err := ms.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("unable to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var returnedUpdaterName string
+
+	if updaterError == nil {
+		zlog.Debug(ctx).
+			Str("updater", updaterName).
+			Msg("recording successful update")
+		_, err := tx.ExecContext(ctx, upsertSuccessfulUpdate, updaterName, updateTime, fingerprint)
+		if err != nil {
+			return fmt.Errorf("failed to upsert successful updater status: %w", err)
+		}
+	} else {
+		zlog.Debug(ctx).
+			Str("updater", updaterName).
+			Msg("recording failed update")
+		if err := tx.QueryRowContext(ctx, upsertFailedUpdate, updaterName, updateTime, fingerprint, updaterError.Error()).Scan(&returnedUpdaterName); err != nil {
+			return fmt.Errorf("failed to upsert failed updater status: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	zlog.Debug(ctx).
+		Str("updater", updaterName).
+		Msg("updater status stored in database")
+
 	return nil
 }
 
 // RecordUpdaterSetStatus records that all updaters from an updater set are up to date with vulnerabilities at this time
-func (ms *sqliteMatcherStore) RecordUpdaterSetStatus(context.Context, string, time.Time) error {
+func (ms *sqliteMatcherStore) RecordUpdaterSetStatus(ctx context.Context, updaterSet string, updateTime time.Time) error {
+	zlog.Debug(ctx).Msg(">>> RecordUpdaterSetStatus")
+	const (
+		update = `UPDATE updater_status
+		SET last_attempt = $1,
+			last_success = $1,
+			last_run_succeeded = 'true'
+		WHERE updater_name LIKE $2 || '%';`
+	)
+
+	ctx = zlog.ContextWithValues(ctx,
+		"component", "internal/vulnstore/postgres/recordUpdaterSetStatus")
+
+	tx, err := ms.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("unable to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	tag, err := tx.ExecContext(ctx, update, updateTime, updaterSet)
+	if err != nil {
+		return fmt.Errorf("failed to update updater statuses for updater set %s: %w", updaterSet, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	ra, err := tag.RowsAffected()
+	zlog.Debug(ctx).
+		Str("factory", updaterSet).
+		Int64("rowsAffected", ra).
+		Msg("status updated for factory updaters")
+
 	return nil
 }
 
-// DeltaUpdateVulnerabilities in this implementation just calls sqliteMatcherStore.UpdateVulnerabilities as delta updating is not
-// possible or desired in this implementation.
-func (ms *sqliteMatcherStore) DeltaUpdateVulnerabilities(ctx context.Context, updater string, fp driver.Fingerprint, vulns []*claircore.Vulnerability, del []string) (uuid.UUID, error) {
-	return ms.UpdateVulnerabilities(ctx, updater, fp, vulns)
+func (ms *sqliteMatcherStore) DeltaUpdateVulnerabilities(ctx context.Context, updater string, fp driver.Fingerprint, vulns []*claircore.Vulnerability, deletedVulns []string) (uuid.UUID, error) {
+	zlog.Debug(ctx).Msg(">>> DeltaUpdateVulnerabilities")
+	iterVulns := func(yield func(*claircore.Vulnerability, error) bool) {
+		for i := range vulns {
+			if !yield(vulns[i], nil) {
+				break
+			}
+		}
+	}
+	delVulns := func(yield func(string, error) bool) {
+		for _, s := range deletedVulns {
+			if !yield(s, nil) {
+				break
+			}
+		}
+	}
+	return ms.updateVulnerabilities(ctx, updater, fp, iterVulns, delVulns)
 }

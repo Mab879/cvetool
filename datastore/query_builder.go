@@ -86,6 +86,7 @@ func buildGetQuery(record *claircore.IndexRecord, opts *datastore.GetOpts) (stri
 			goqu.L("version_in('"+ver.String()+"', vulnerable_range)"),
 		))
 	}
+	exps = append(exps, goqu.I("latest_update_operations.kind").Eq("vulnerability"))
 
 	query := psql.Select(
 		"vuln.hash",
@@ -117,6 +118,8 @@ func buildGetQuery(record *claircore.IndexRecord, opts *datastore.GetOpts) (stri
 	).From("vuln").
 		Join(goqu.I("metadata").As("desc"), goqu.On(goqu.Ex{"vuln.description_id": goqu.I("desc.id")})).
 		Join(goqu.I("metadata").As("name"), goqu.On(goqu.Ex{"vuln.name_id": goqu.I("name.id")})).
+		Join(goqu.I("uo_vuln"), goqu.On(goqu.Ex{"vuln.id": goqu.I("uo_vuln.vuln")})).
+		Join(goqu.I("latest_update_operations"), goqu.On(goqu.Ex{"latest_update_operations.id": goqu.I("uo_vuln.uo")})).
 		Where(exps...)
 
 	sql, _, err := query.ToSQL()

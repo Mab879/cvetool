@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,11 +34,9 @@ type EnumValue struct {
 }
 
 func (e *EnumValue) Set(value string) error {
-	for _, enum := range e.Enum {
-		if enum == value {
-			e.selected = value
-			return nil
-		}
+	if slices.Contains(e.Enum, value) {
+		e.selected = value
+		return nil
 	}
 
 	return fmt.Errorf("allowed values are %s", strings.Join(e.Enum, ", "))
@@ -123,7 +122,7 @@ func report(c *cli.Context) error {
 
 	var (
 		// All arguments
-		rootPath         = c.String("root-path")
+		rootPath        = c.String("root-path")
 		imgRef          = c.String("image-ref")
 		imgPath         = c.String("image-path")
 		dbPath          = c.String("db-path")
@@ -206,8 +205,12 @@ func report(c *cli.Context) error {
 	}
 
 	indexerOpts := &libindex.Options{
-		Store:      datastore.NewLocalIndexerStore(),
-		Locker:     NewLocalLockSource(),
+		Store:  datastore.NewLocalIndexerStore(),
+		Locker: NewLocalLockSource(),
+		// TODO: Fixme
+		//Ecosystems: []*indexer.Ecosystem{
+		//	rhel.NewEcosystem(ctx),
+		//},
 		FetchArena: fa,
 	}
 	li, err := libindex.New(ctx, indexerOpts, http.DefaultClient)
