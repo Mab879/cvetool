@@ -4,8 +4,8 @@ import (
 	"io"
 )
 
-func NewSarifWriter(buf io.Writer) (*TemplateWriter, error) {
-	tfb, err := templates.ReadFile("templates/sarif.tpl")
+func NewPlainWriter(buf io.Writer) (*TemplateWriter, error) {
+	tfb, err := templates.ReadFile("templates/plain.tpl")
 	if err != nil {
 		return nil, err
 	}

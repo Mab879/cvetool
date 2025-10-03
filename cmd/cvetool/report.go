@@ -53,6 +53,7 @@ const (
 	clairFmt = "clair"
 	sarifFmt = "sarif"
 	quayFmt  = "quay"
+	plainFmt = "plain"
 )
 
 var reportCmd = &cli.Command{
@@ -95,8 +96,8 @@ var reportCmd = &cli.Command{
 			Name:    "format",
 			Aliases: []string{"f"},
 			Value: &EnumValue{
-				Enum:    []string{clairFmt, sarifFmt, quayFmt},
-				Default: clairFmt,
+				Enum:    []string{clairFmt, sarifFmt, quayFmt, plainFmt},
+				Default: plainFmt,
 			},
 			Usage:   "what output format the results should be in",
 			EnvVars: []string{"FORMAT"},
@@ -242,6 +243,15 @@ func report(c *cli.Context) error {
 		err = tw.Write(vr)
 		if err != nil {
 			return fmt.Errorf("error writing sarif report: %v", err)
+		}
+	case plainFmt:
+		tw, err := output.NewPlainWriter(os.Stdout)
+		if err != nil {
+			return fmt.Errorf("error creating plain report writer: %v", err)
+		}
+		err = tw.Write(vr)
+		if err != nil {
+			return fmt.Errorf("error writing plain report: %v", err)
 		}
 	case quayFmt:
 		quayReport, err := output.ReportToSecScan(vr)

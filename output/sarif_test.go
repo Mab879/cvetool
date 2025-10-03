@@ -3,7 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"os"
 	"testing"
 
@@ -22,7 +22,7 @@ func TestTemplateRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("got an error opening vulnerability report: %v", err)
 	}
-	vrb, err := ioutil.ReadAll(vrf)
+	vrb, err := io.ReadAll(vrf)
 	if err != nil {
 		t.Fatalf("got an error reading vuln report bytes: %v", err)
 	}
