@@ -45,8 +45,10 @@ func update(c *cli.Context) error {
 		DisableBackgroundUpdates: true,
 		UpdateRetention:          3,
 		UpdateWorkers:            1,
-		// FIXME: We need the enrichment updater as well (cvss)
-		//UpdaterSets: []string{"rhel-vex"},
+		// We don't need matchers for update procedure
+		MatcherNames: []string{},
+		// Limit CVE feed and enrichment updaters to RHEL ecosystem
+		UpdaterSets: []string{"rhel-vex", "clair.cvss"},
 	}
 
 	lv, err := libvuln.New(ctx, matcherOpts)

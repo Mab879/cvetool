@@ -18,6 +18,7 @@ import (
 	"github.com/quay/claircore/libvuln/driver"
 	_ "github.com/quay/claircore/matchers/defaults"
 	"github.com/quay/claircore/pkg/tarfs"
+	"github.com/quay/claircore/rhel"
 	"github.com/urfave/cli/v2"
 
 	datastore "github.com/ComplianceAsCode/cvetool/datastore"
@@ -161,7 +162,7 @@ func report(c *cli.Context) error {
 			return fmt.Errorf("error getting filesystem information: %v", err)
 		}
 	default:
-		return fmt.Errorf("no $IMAGE_PATH / --image-path or $IMAGE_REF / --image-ref set")
+		return fmt.Errorf("no --image-path ($IMAGE_PATH), --image-ref ($IMAGE_REF) or --root-path ($ROOT_PATH) set")
 	}
 
 	switch {
@@ -191,6 +192,10 @@ func report(c *cli.Context) error {
 		Locker:                   NewLocalLockSource(),
 		DisableBackgroundUpdates: true,
 		UpdateWorkers:            1,
+		MatcherNames:             []string{"rhel"},
+		// TODO: Do we actually need updaters for the report operation?
+		// UpdaterSets:              []string{"rhel-vex", "cvss"},
+		UpdaterSets: []string{},
 		Enrichers: []driver.Enricher{
 			&cvss.Enricher{},
 		},
@@ -208,10 +213,10 @@ func report(c *cli.Context) error {
 	indexerOpts := &libindex.Options{
 		Store:  datastore.NewLocalIndexerStore(),
 		Locker: NewLocalLockSource(),
-		// TODO: Fixme
-		//Ecosystems: []*indexer.Ecosystem{
-		//	rhel.NewEcosystem(ctx),
-		//},
+		// Limit indexers to RHEL ecosystem
+		Ecosystems: []*indexer.Ecosystem{
+			rhel.NewEcosystem(ctx),
+		},
 		FetchArena: fa,
 	}
 	li, err := libindex.New(ctx, indexerOpts, http.DefaultClient)
