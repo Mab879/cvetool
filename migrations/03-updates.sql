@@ -62,6 +62,6 @@ CREATE TABLE updater_status (
 -- Create view that maintains the lastest update_operation id per updater.
 -- TODO: Materialized?
 CREATE VIEW latest_update_operations AS
-SELECT id, kind FROM update_operation GROUP BY updater ORDER BY updater, id DESC;
+SELECT id, kind, updater FROM update_operation GROUP BY updater ORDER BY updater, id DESC;
 
 CREATE INDEX enrichment_updater_idx ON enrichment (updater);
