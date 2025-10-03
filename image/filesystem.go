@@ -24,7 +24,7 @@ func (i *fileSystemImage) getLayers(ctx context.Context) ([]*claircore.Layer, er
 	layers := []*claircore.Layer{}
 
 	desc := &claircore.LayerDescription{
-		Digest:    fmt.Sprintf("sha256:%s", strings.Repeat("a", 64)),
+		Digest:    fmt.Sprintf("sha256:%s", strings.Repeat("1", 64)),
 		URI:       i.rootDir,
 		MediaType: "application/vnd.claircore.filesystem",
 	}
@@ -44,7 +44,7 @@ func (i *fileSystemImage) getLayers(ctx context.Context) ([]*claircore.Layer, er
 }
 
 func (i *fileSystemImage) GetManifest(ctx context.Context) (*claircore.Manifest, error) {
-	digest, err := claircore.ParseDigest(fmt.Sprintf("sha256:%s", strings.Repeat("b", 64)))
+	digest, err := claircore.ParseDigest(fmt.Sprintf("sha256:%s", strings.Repeat("0", 64)))
 	if err != nil {
 		return nil, err
 	}

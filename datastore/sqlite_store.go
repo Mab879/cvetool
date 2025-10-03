@@ -728,8 +728,6 @@ func (ms *sqliteMatcherStore) GetEnrichment(ctx context.Context, kind string, ta
 		AND uo.enrich = e.id
 		AND json_each.value IN ` + makePlaceholders(2, len(tags)) + ";"
 
-	zlog.Warn(ctx).Msg(">>> GetEnrichment")
-
 	tx, err := ms.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
