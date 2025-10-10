@@ -2,6 +2,7 @@ package output
 
 import (
 	"io"
+	"text/tabwriter"
 )
 
 func NewPlainWriter(buf io.Writer) (*TemplateWriter, error) {
@@ -9,7 +10,8 @@ func NewPlainWriter(buf io.Writer) (*TemplateWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	tw, err := NewTemplateWriter(buf, string(tfb))
+	w := tabwriter.NewWriter(buf, 0, 0, 1, ' ', 0)
+	tw, err := NewTemplateWriter(w, string(tfb))
 	if err != nil {
 		return nil, err
 	}

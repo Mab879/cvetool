@@ -1,9 +1,9 @@
 {{- define "ok" -}}
-OK
+No CVEs found.
 {{end}}
 {{- define "found" -}}
 {{with $r := .}}{{range $id, $v := .PackageVulnerabilities}}{{range $d := $v -}}
-Found	{{with index $r.Packages $id}}{{.Name}}	{{.Version}}{{end}}
+{{with index $r.Packages $id}}{{.Name}}	{{.Version}}{{end}}
 	{{- with index $r.Vulnerabilities $d}}	{{.Name}}
 	{{- with .FixedInVersion}}	(fixed: {{.}}){{end}}{{end}}
 {{end}}{{end}}{{end}}{{end}}
