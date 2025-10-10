@@ -114,7 +114,7 @@ func buildGetQuery(record *claircore.IndexRecord, opts *datastore.GetOpts) (stri
 		"repo_key",
 		"repo_uri",
 		"fixed_in_version",
-		"updater",
+		"vuln.updater",
 	).From("vuln").
 		Join(goqu.I("metadata").As("desc"), goqu.On(goqu.Ex{"vuln.description_id": goqu.I("desc.id")})).
 		Join(goqu.I("metadata").As("name"), goqu.On(goqu.Ex{"vuln.name_id": goqu.I("name.id")})).

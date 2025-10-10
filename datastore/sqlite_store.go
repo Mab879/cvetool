@@ -488,6 +488,10 @@ func (ms *sqliteMatcherStore) updateVulnerabilities(ctx context.Context, updater
 			err = fmt.Errorf("failed to insert vulnerability: %w", err)
 			return false
 		}
+		if _, err = tx.ExecContext(ctx, assoc, hashKind, hash, uoID); err != nil {
+			err = fmt.Errorf("failed to assoc vulnerability: %w", err)
+			return false
+		}
 
 		return true
 	})

@@ -28,13 +28,6 @@ CREATE TABLE IF NOT EXISTS uo_vuln (
 CREATE INDEX uo_vuln_vuln_idx ON uo_vuln (vuln);
 CREATE INDEX uo_vuln_uo_idx ON uo_vuln (uo);
 
--- Latest_vuln is a helper view to get the current snapshot of the vuln database.
-CREATE VIEW latest_vuln AS
-SELECT v.*
-FROM (SELECT id FROM update_operation GROUP BY updater ORDER BY updater, id DESC) uo
-	JOIN uo_vuln ON uo_vuln.uo = uo.id
-	JOIN vuln v ON uo_vuln.vuln = v.id;
-
 CREATE TABLE uo_enrich
 (
     uo          INTEGER NOT NULL,
@@ -62,6 +55,6 @@ CREATE TABLE updater_status (
 -- Create view that maintains the lastest update_operation id per updater.
 -- TODO: Materialized?
 CREATE VIEW latest_update_operations AS
-SELECT id, kind, updater FROM update_operation GROUP BY updater ORDER BY updater, id DESC;
+SELECT MAX(id) as id, kind, updater FROM update_operation GROUP BY updater;
 
 CREATE INDEX enrichment_updater_idx ON enrichment (updater);
