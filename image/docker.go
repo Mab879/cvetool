@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/quay/claircore"
+	"github.com/quay/zlog"
 )
 
 var _ Image = (*dockerLocalImage)(nil)
@@ -42,24 +43,36 @@ func NewDockerLocalImage(ctx context.Context, exportDir string, importDir string
 	hdr, err := tr.Next()
 	for ; err == nil; hdr, err = tr.Next() {
 		dir, fn := filepath.Split(hdr.Name)
-		if fn == "layer.tar" {
 
-			sha := filepath.Base(dir)
+		if strings.HasSuffix(fn, ".tar") {
+			layerFilePath := ""
 
-			layerFilePath := filepath.Join(importDir, "sha256:"+sha)
+			if fn == "layer.tar" {
+				if hdr.Linkname == "" && hdr.Size > 0 {
+					sha := filepath.Base(dir)
+					layerFilePath = filepath.Join(importDir, "sha256:"+sha)
+				} else {
+					continue
+				}
+			} else {
+				sha := strings.TrimSuffix(fn, filepath.Ext(fn))
+				layerFilePath = filepath.Join(importDir, "sha256:"+sha)
+			}
+
+			zlog.Debug(ctx).Str("layerFilePath", layerFilePath).Msg("found .tar file")
+
 			layerFile, err := os.OpenFile(layerFilePath, os.O_CREATE|os.O_RDWR, os.FileMode(0600))
 			if err != nil {
 				return nil, err
 			}
-
 			_, err = io.Copy(layerFile, tr)
 			if err != nil {
 				return nil, err
 			}
-
 			di.layerPaths = append(di.layerPaths, layerFile.Name())
 			layerFile.Close()
 		}
+
 		if fn == "manifest.json" {
 			_m := []*imageInfo{}
 			b, err := io.ReadAll(tr)
@@ -72,50 +85,70 @@ func NewDockerLocalImage(ctx context.Context, exportDir string, importDir string
 			}
 			m = _m[0]
 			digest := strings.TrimSuffix(m.Config, filepath.Ext(m.Config))
+			zlog.Debug(ctx).Str("digest", digest)
 			di.imageDigest = "sha256:" + digest
 		}
 	}
 
 	var sortedPaths []string
+	zlog.Debug(ctx).Any("m.Layers", m.Layers)
+	zlog.Debug(ctx).Any("di.layerPaths", di.layerPaths)
+
 	for _, p := range m.Layers {
+		zlog.Debug(ctx).Str("p", p)
 		for _, l := range di.layerPaths {
+			zlog.Debug(ctx).Str("p", p).Str("l", l).Msg("lps")
 			if filepath.Dir(p) == strings.TrimPrefix(filepath.Base(l), "sha256:") {
+				sortedPaths = append(sortedPaths, l)
+			}
+			if strings.TrimSuffix(p, filepath.Ext(p)) == strings.TrimPrefix(filepath.Base(l), "sha256:") {
 				sortedPaths = append(sortedPaths, l)
 			}
 		}
 	}
+	zlog.Debug(ctx).Any("sortedPaths", sortedPaths).Msg("layers")
 	di.layerPaths = sortedPaths
 	return di, nil
 }
 
-func (i *dockerLocalImage) getLayers() ([]*claircore.Layer, error) {
+func (i *dockerLocalImage) getLayers(ctx context.Context) ([]*claircore.Layer, error) {
 	if len(i.layerPaths) == 0 {
 		return nil, nil
 	}
 	layers := []*claircore.Layer{}
 	for _, layerStr := range i.layerPaths {
-
 		_, d := filepath.Split(layerStr)
-		hash, err := claircore.ParseDigest(d)
+
+		desc := &claircore.LayerDescription{
+			Digest:    d,
+			URI:       layerStr,
+			MediaType: "application/vnd.oci.image.layer.v1.tar",
+		}
+
+		l := &claircore.Layer{}
+		f, err := os.OpenFile(layerStr, os.O_RDONLY, os.FileMode(0600))
 		if err != nil {
-			return nil, err
+			zlog.Error(ctx).Err(err)
 		}
-		l := &claircore.Layer{
-			Hash: hash,
-			URI:  layerStr,
+		err = l.Init(ctx, desc, f)
+		if err != nil {
+			zlog.Error(ctx).Err(err)
 		}
+
 		layers = append(layers, l)
+
+		l.Close()
 	}
 	return layers, nil
 }
 
-func (i *dockerLocalImage) GetManifest(_ context.Context) (*claircore.Manifest, error) {
+func (i *dockerLocalImage) GetManifest(ctx context.Context) (*claircore.Manifest, error) {
 	digest, err := claircore.ParseDigest(i.imageDigest)
 	if err != nil {
 		return nil, err
 	}
 
-	layers, err := i.getLayers()
+	layers, err := i.getLayers(ctx)
 	if err != nil {
 		return nil, err
 	}
