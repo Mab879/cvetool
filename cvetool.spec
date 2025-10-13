@@ -1,3 +1,5 @@
+%global debug_package %{nil}
+
 Name:           cvetool
 Version:        0.0.1
 Release:        1%{?dist}
