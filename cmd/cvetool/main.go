@@ -42,9 +42,8 @@ func main() {
 		},
 
 		Commands: []*cli.Command{
-			reportCmd,
+			scanCmd,
 			updateCmd,
-			convertCmd,
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{

@@ -28,12 +28,18 @@ import (
 	output "github.com/ComplianceAsCode/cvetool/output"
 )
 
-var defaultDBPath = filepath.Join(os.TempDir(), "matcher.db")
-
 type EnumValue struct {
 	Enum     []string
 	Default  string
 	selected string
+}
+
+func getDefaultDBPath() (string, error) {
+	homeFolder, err := os.UserHomeDir()
+	if err != nil || homeFolder == "" {
+		return "", fmt.Errorf("home folder not set, DB path must be specified")
+	}
+	return filepath.Join(homeFolder, ".local", "share", "cvetool", "matcher.db"), nil
 }
 
 func (e *EnumValue) Set(value string) error {
@@ -59,15 +65,15 @@ const (
 	plainFmt = "plain"
 )
 
-var reportCmd = &cli.Command{
-	Name:    "report",
-	Aliases: []string{"r"},
-	Usage:   "report on a manifest",
-	Action:  report,
+var scanCmd = &cli.Command{
+	Name:    "scan",
+	Aliases: []string{"s"},
+	Usage:   "scan a system",
+	Action:  scan,
 	Flags: []cli.Flag{
 		&cli.PathFlag{
 			Name:    "root-path",
-			Value:   "",
+			Value:   "/",
 			Usage:   "where to look for the local filesystem root",
 			EnvVars: []string{"ROOT_PATH"},
 		},
@@ -82,18 +88,6 @@ var reportCmd = &cli.Command{
 			Value:   "",
 			Usage:   "where to look for the matcher DB",
 			EnvVars: []string{"DB_PATH"},
-		},
-		&cli.StringFlag{
-			Name:    "image-ref",
-			Value:   "",
-			Usage:   "the remote location of the image",
-			EnvVars: []string{"IMAGE_REF"},
-		},
-		&cli.StringFlag{
-			Name:    "db-url",
-			Value:   "",
-			Usage:   "the remote location of the sqlite zstd DB",
-			EnvVars: []string{"DB_URL"},
 		},
 		&cli.GenericFlag{
 			Name:    "format",
@@ -112,16 +106,10 @@ var reportCmd = &cli.Command{
 			Usage:   "what status code to return when vulnerabilites are found",
 			EnvVars: []string{"RETURN_CODE"},
 		},
-		&cli.StringFlag{
-			Name:    "docker-config-dir",
-			Value:   "",
-			Usage:   "Docker config dir for the  image registry where --image-ref is stored",
-			EnvVars: []string{"DOCKER_CONFIG_DIR"},
-		},
 	},
 }
 
-func report(c *cli.Context) error {
+func scan(c *cli.Context) error {
 	ctx := c.Context
 
 	var (
@@ -170,14 +158,21 @@ func report(c *cli.Context) error {
 	switch {
 	case dbPath != "":
 	case dbURL != "":
-		dbPath = defaultDBPath
 		var err error
-		err = datastore.DownloadDB(ctx, dbURL, defaultDBPath)
+		err = datastore.DownloadDB(ctx, dbURL, "")
 		if err != nil {
 			return fmt.Errorf("could not download database: %v", err)
 		}
 	default:
-		return fmt.Errorf("no $DB_PATH / --db-path or $DB_URL / --db-url set")
+		var err error
+		dbPath, err = getDefaultDBPath()
+		if err != nil {
+			return err
+		}
+	}
+
+	if _, err := os.Stat(dbPath); err != nil {
+		return fmt.Errorf("unable to get database path")
 	}
 
 	matcherStore, err := datastore.NewSQLiteMatcherStore(dbPath, true)
