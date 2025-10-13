@@ -53,10 +53,6 @@ $ ./cvetool report --image-path=./rhel-10-ubi.tar --db-path=./matcher.db
 ```
 to scan a `podman/docker image save ...`-compatible `.tar` image and generate vulnerabilities report.
 
-> [!CAUTION]
-> Currently the tool fails to process contemporary images with `layer.tar` symlinks (https://github.com/ComplianceAsCode/cvetool/issues/18).
-> **At this moment it is not possible to get a report for a container image**.
-
 ## Scan a Remote Container Image
 
 Run
