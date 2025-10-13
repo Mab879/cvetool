@@ -5,7 +5,7 @@ Summary:        A Claircore-based CVE manager
 
 License:        Apache-2.0
 URL:            https://github.com/ComplianceAsCode/cvetool
-Source0:        %{name}-%{version}.tar.gz
+Source0:        https://github.com/ComplianceAsCode/cvetool/archive/v%{version}/%{name}-%{version}.tar.gz
 
 BuildRequires:  golang
 BuildRequires:  git
