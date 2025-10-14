@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	_ "github.com/quay/claircore/matchers/defaults"
 	"github.com/quay/claircore/pkg/tarfs"
 	"github.com/quay/claircore/rhel"
+	"github.com/quay/zlog"
 	"github.com/urfave/cli/v2"
 
 	datastore "github.com/ComplianceAsCode/cvetool/datastore"
@@ -228,6 +230,10 @@ func report(c *cli.Context) error {
 	// error overhaul is merged.
 	switch {
 	case errors.Is(err, nil):
+	case errors.Is(err, fs.ErrInvalid):
+		zlog.Warn(ctx).Err(err).Msg("inaccessible file or directory (invalid)")
+	case errors.Is(err, fs.ErrPermission):
+		zlog.Warn(ctx).Err(err).Msg("inaccessible file or directory (permission)")
 	case errors.Is(err, tarfs.ErrFormat):
 		return fmt.Errorf("error creating index report due to invalid layer: %v", err)
 	default:
