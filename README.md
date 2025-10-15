@@ -4,7 +4,7 @@ A [Claircore](https://github.com/quay/claircore)-based CVE manager (see also [cl
 
 # Build
 
-Install Go development tools and libraries (`goland`) and GNU `make`.
+Install Go development tools and libraries (`golang`) and GNU `make`.
 Run 
 ```
 $ make build
@@ -20,14 +20,14 @@ and filled with CVE records.
 
 Run
 ```
-$ ./cvetool update --db-path=./matcher.db
+$ ./cvetool update
 ```
 to create or update the DB (SQLite).
 
 The `--db-path` argument is the path to the database location. 
 
-> [!IMPORTANT]
-> If the parameter is omitted the tool creates ephemeral (in-memory) database, which will be discarded after the tool finishes its job.
+> [!NOTE]
+> If the parameter is omitted the tool creates database for the user in `~/.local/share/cvetool/matcher.db`.
 
 The initial update procedure could take up to 30 minutes. Further incremental updates will be significantly faster.
 
@@ -35,7 +35,7 @@ The initial update procedure could take up to 30 minutes. Further incremental up
 
 Run
 ```
-$ ./cvetool report --root-path=/ --db-path=./matcher.db
+$ ./cvetool scan --root-path=/
 ```
 to scan the underlying system and generate vulnerabilities report.
 
@@ -49,7 +49,7 @@ The `--root-path` argument defines root directory of the target file system.
 
 Run
 ```
-$ ./cvetool report --image-path=./rhel-10-ubi.tar --db-path=./matcher.db
+$ ./cvetool scan --image-path=./rhel-10-ubi.tar
 ```
 to scan a `podman/docker image save ...`-compatible `.tar` image and generate vulnerabilities report.
 
@@ -57,7 +57,7 @@ to scan a `podman/docker image save ...`-compatible `.tar` image and generate vu
 
 Run
 ```
-$ ./cvetool report --image-ref=registry.access.redhat.com/ubi10/ubi --db-path=./matcher.db
+$ ./cvetool scan --image-ref=registry.access.redhat.com/ubi10/ubi
 ```
 to pull and scan an image from a repository and generate vulnerabilities report.
 
@@ -69,7 +69,7 @@ Run
 ```
 $ mkdir -p ./rhel10-vm
 $ guestmount -a ~/.local/share/gnome-boxes/images/rhel10.0 -i --ro ./rhel10-vm
-$ ./cvetool report --root-path=./rhel10-vm --db-path=./matcher.db
+$ ./cvetool scan --root-path=./rhel10-vm --db-path=./matcher.db
 ```
 to mount the file system, scan and generate vulnerabilities report.
 
