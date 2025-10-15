@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/ComplianceAsCode/cvetool/datastore"
@@ -29,6 +31,19 @@ var updateCmd = &cli.Command{
 func update(c *cli.Context) error {
 	ctx := c.Context
 	dbPath := c.String("db-path")
+	if dbPath == "" {
+		var err error
+		dbPath, err = getDefaultDBPath()
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(dbPath); err != nil {
+			dbDirPath := filepath.Dir(dbPath)
+			if err := os.MkdirAll(dbDirPath, 0755); err != nil {
+				return fmt.Errorf("unable to create database path, %s", err)
+			}
+		}
+	}
 	matcherStore, err := datastore.NewSQLiteMatcherStore(dbPath, true)
 	if err != nil {
 		return fmt.Errorf("error creating sqlite backend: %v", err)
