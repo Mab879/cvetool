@@ -1,4 +1,4 @@
-[![badge](https://copr.fedorainfracloud.org/coprs/packit/ComplianceAsCode-cvetool-main/package/cvetool/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/packit/ComplianceAsCode-cvetool-main/)
+[![badge](https://github.com/quay/claircore/workflows/CI/badge.svg)](https://github.com/ComplianceAsCode/cvetool) [![badge](https://copr.fedorainfracloud.org/coprs/packit/ComplianceAsCode-cvetool-main/package/cvetool/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/packit/ComplianceAsCode-cvetool-main/)
 
 # CVE Tool
 
