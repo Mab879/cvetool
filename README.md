@@ -1,3 +1,5 @@
+[![badge](https://copr.fedorainfracloud.org/coprs/packit/ComplianceAsCode-cvetool-main/package/cvetool/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/packit/ComplianceAsCode-cvetool-main/)
+
 # CVE Tool
 
 A [Claircore](https://github.com/quay/claircore)-based CVE manager (see also [clair-action](https://github.com/quay/clair-action/)).
