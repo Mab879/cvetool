@@ -1,0 +1,22 @@
+upstream_package_name: cvetool
+downstream_package_name: cvetool
+specfile_path: cvetool.spec
+
+jobs:
+- job: copr_build
+  trigger: pull_request
+  enable_net: True
+  targets:
+  - rhel-10-x86_64
+  - rhel-9-x86_64
+  - fedora-latest-x86_64
+
+- job: copr_build
+  trigger: commit
+  branch: main
+  preserve_project: True
+  enable_net: True
+  targets:
+  - rhel-10-x86_64
+  - rhel-9-x86_64
+  - fedora-latest-x86_64
