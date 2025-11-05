@@ -17,6 +17,8 @@ jobs:
   preserve_project: True
   enable_net: True
   targets:
+  - epel-10-x86_64
+  - epel-9-x86_64
   - rhel-10-x86_64
   - rhel-9-x86_64
   - fedora-latest-x86_64
