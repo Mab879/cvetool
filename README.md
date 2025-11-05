@@ -51,14 +51,6 @@ $ ./cvetool scan --image-path=./rhel-10-ubi.tar
 ```
 to scan a `podman/docker image save ...`-compatible `.tar` image and generate vulnerabilities report.
 
-## Scan a Remote Container Image
-
-Run
-```
-$ ./cvetool scan --image-ref=registry.access.redhat.com/ubi10/ubi
-```
-to pull and scan an image from a repository and generate vulnerabilities report.
-
 ## Scan a Virtual Machine Image
 
 The tool does not directly support indexing VM images. But it can work with a mounted file system, e.g. with `guestmount`.
