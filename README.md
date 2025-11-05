@@ -43,10 +43,6 @@ to scan the underlying system and generate vulnerabilities report.
 
 The `--root-path` argument defines root directory of the target file system.
 
-> [!CAUTION]
-> Currently the tool fails if there is a problem with accessing files (https://github.com/ComplianceAsCode/cvetool/issues/9).
-> **At this moment it is not possible to get a report for the local system**.
-
 ## Scan a Container Image
 
 Run
@@ -71,9 +67,12 @@ Run
 ```
 $ mkdir -p ./rhel10-vm
 $ guestmount -a ~/.local/share/gnome-boxes/images/rhel10.0 -i --ro ./rhel10-vm
+```
+to mount the file system, and then
+```
 $ ./cvetool scan --root-path=./rhel10-vm --db-path=./matcher.db
 ```
-to mount the file system, scan and generate vulnerabilities report.
+to scan and generate vulnerabilities report.
 
 # Report Formats
 

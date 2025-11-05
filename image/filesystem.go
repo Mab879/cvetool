@@ -25,7 +25,7 @@ func (i *fileSystemImage) getLayers(ctx context.Context) ([]*claircore.Layer, er
 
 	desc := &claircore.LayerDescription{
 		Digest:    fmt.Sprintf("sha256:%s", strings.Repeat("1", 64)),
-		URI:       i.rootDir,
+		URI:       "file://" + i.rootDir,
 		MediaType: "application/vnd.claircore.filesystem",
 	}
 

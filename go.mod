@@ -10,7 +10,7 @@ require (
 	github.com/hashicorp/go-version v1.7.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/klauspost/compress v1.18.1
-	github.com/quay/claircore v1.5.45
+	github.com/quay/claircore v1.5.46-0.20251103030235-52da6d5c69b1
 	github.com/quay/zlog v1.1.9
 	github.com/remind101/migrate v0.0.0-20170729031349-52c1edff7319
 	github.com/rs/zerolog v1.34.0
@@ -50,7 +50,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
-	github.com/quay/claircore/toolkit v1.2.4 // indirect
+	github.com/quay/claircore/toolkit v1.3.0 // indirect
 	github.com/quay/claircore/updater/driver v1.0.0 // indirect
 	github.com/quay/goval-parser v0.8.8 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
