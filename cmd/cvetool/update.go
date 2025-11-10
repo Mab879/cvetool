@@ -74,5 +74,8 @@ func update(c *cli.Context) error {
 	if err := lv.FetchUpdates(ctx); err != nil {
 		return fmt.Errorf("error updating vulnerabilities: %v", err)
 	}
+	if err := matcherStore.VacuumDatabase(ctx); err != nil {
+		return fmt.Errorf("error vacuum database : %v", err)
+	}
 	return nil
 }
