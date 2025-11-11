@@ -13,20 +13,6 @@ jobs:
 - job: copr_build
   trigger: commit
   branch: main
-  project: cvetool-testing
-  preserve_project: True
-  enable_net: True
-  targets:
-  - epel-10-x86_64
-  - epel-9-x86_64
-  - rhel-10-x86_64
-  - rhel-9-x86_64
-  - fedora-stable-x86_64
-
-- job: copr_build
-  trigger: release
-  branch: main
-  project: cvetool
   preserve_project: True
   enable_net: True
   targets:
