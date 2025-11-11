@@ -1,4 +1,4 @@
-package datastore
+package sqlite
 
 import (
 	"database/sql/driver"
