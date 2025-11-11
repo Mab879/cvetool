@@ -58,7 +58,7 @@ func update(c *cli.Context) error {
 		Store:                    matcherStore,
 		Locker:                   NewLocalLockSource(),
 		DisableBackgroundUpdates: true,
-		UpdateRetention:          3,
+		UpdateRetention:          2,
 		UpdateWorkers:            1,
 		// We don't need matchers for update procedure
 		MatcherNames: []string{},
