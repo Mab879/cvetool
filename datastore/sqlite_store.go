@@ -705,6 +705,14 @@ func formatStringArray(s []string) string {
 	return strings.Join(s, "','")
 }
 
+func formatStringArrayFromUUIDs(uuids []uuid.UUID) string {
+	var s []string
+	for _, uuid := range uuids {
+		s = append(s, uuid.String())
+	}
+	return strings.Join(s, "','")
+}
+
 func (ms *sqliteMatcherStore) GetEnrichment(ctx context.Context, kind string, tags []string) ([]driver.EnrichmentRecord, error) {
 	var query = `
 	WITH
@@ -765,6 +773,11 @@ func (ms *sqliteMatcherStore) GetEnrichment(ctx context.Context, kind string, ta
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit tx: %v", err)
+	}
+
 	return results, nil
 }
 
@@ -828,7 +841,9 @@ func (ms *sqliteMatcherStore) GetUpdateOperations(ctx context.Context, kind driv
 		q = queryVulnerability
 	}
 
-	rows, err := tx.QueryContext(ctx, q, formatStringArray(updater))
+	// FIXME: This is REALLY ugly!
+	fmt_q := fmt.Sprintf(strings.Replace(q, "$1", "'%s'", 1), formatStringArray(updater))
+	rows, err := tx.QueryContext(ctx, fmt_q)
 	switch {
 	case err == nil:
 	case errors.Is(err, pgx.ErrNoRows):
@@ -854,6 +869,9 @@ func (ms *sqliteMatcherStore) GetUpdateOperations(ctx context.Context, kind driv
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit tx: %v", err)
 	}
 
 	return out, nil
@@ -889,8 +907,23 @@ func (ms *sqliteMatcherStore) GetUpdateDiff(ctx context.Context, prev uuid.UUID,
 //
 // The number of UpdateOperations deleted is returned.
 func (ms *sqliteMatcherStore) DeleteUpdateOperations(ctx context.Context, uuids ...uuid.UUID) (int64, error) {
-	zlog.Warn(ctx).Msg("sqliteMatcherStore.DeleteUpdateOperations is not implemented!")
-	return 0, nil
+	const query = `DELETE FROM update_operation WHERE ref IN ($1);`
+	ctx = zlog.ContextWithValues(ctx, "component", "internal/vulnstore/sqlite/deleteUpdateOperations")
+	zlog.Debug(ctx).Msg(">>> sqliteMatcherStore.DeleteUpdateOperations")
+
+	if len(uuids) == 0 {
+		return 0, nil
+	}
+
+	// FIXME: This is REALLY ugly!
+	fmt_q := fmt.Sprintf(strings.Replace(query, "$1", "'%s'", 1), formatStringArrayFromUUIDs(uuids))
+	tag, err := ms.conn.ExecContext(ctx, fmt_q)
+	if err != nil {
+		zlog.Error(ctx).Err(err).Msg("ExecContext")
+		return 0, fmt.Errorf("failed to delete: %w", err)
+	}
+
+	return tag.RowsAffected()
 }
 
 // GC will delete any update operations for an updater which exceeds the provided keep
@@ -901,8 +934,182 @@ func (ms *sqliteMatcherStore) DeleteUpdateOperations(ctx context.Context, uuids 
 // The returned int64 value indicates the remaining number of update operations needing GC.
 // Running this method till the returned value is 0 accomplishes a full GC of the vulnstore.
 func (ms *sqliteMatcherStore) GC(ctx context.Context, count int) (int64, error) {
-	zlog.Warn(ctx).Msg("sqliteMatcherStore.GC is not implemented!")
-	return 0, nil
+	ctx = zlog.ContextWithValues(ctx, "component", "datastore/sqlite/GC")
+	zlog.Debug(ctx).Msg(">>> sqliteMatcherStore.GC")
+
+	// obtain update operations which need deletin'
+	ops, totalOps, err := eligibleUpdateOpts(ctx, ms.conn, count)
+	if err != nil {
+		return 0, err
+	}
+
+	deletedOps, err := ms.DeleteUpdateOperations(ctx, ops...)
+	if err != nil {
+		zlog.Error(ctx).Err(err).Msg("DeleteUpdateOperations")
+		return totalOps - deletedOps, err
+	}
+
+	// get all updaters we know about.
+	updaters, err := distinctUpdaters(ctx, ms.conn)
+	if err != nil {
+		return totalOps - deletedOps, err
+	}
+
+	for kind, us := range updaters {
+		var cleanup cleanupFunc
+		switch kind {
+		case driver.VulnerabilityKind:
+			cleanup = vulnCleanup
+		case driver.EnrichmentKind:
+			cleanup = enrichmentCleanup
+		default:
+			zlog.Error(ctx).Str("kind", string(kind)).Msg("unknown updater kind; skipping cleanup")
+			continue
+		}
+		for _, u := range us {
+			err := cleanup(ctx, ms.conn, u)
+			if err != nil {
+				return totalOps - deletedOps, err
+			}
+		}
+	}
+
+	return totalOps - deletedOps, nil
+}
+
+// distinctUpdaters returns all updaters which have registered an update
+// operation.
+func distinctUpdaters(ctx context.Context, conn *sql.DB) (map[driver.UpdateKind][]string, error) {
+	const (
+		// will always contain at least two update operations
+		selectUpdaters = `SELECT DISTINCT(updater), kind FROM update_operation;`
+	)
+	rows, err := conn.QueryContext(ctx, selectUpdaters)
+	if err != nil {
+		return nil, fmt.Errorf("error selecting distinct updaters: %v", err)
+	}
+	defer rows.Close()
+
+	updaters := make(map[driver.UpdateKind][]string)
+	for rows.Next() {
+		var (
+			updater string
+			kind    driver.UpdateKind
+		)
+		err := rows.Scan(&updater, &kind)
+		switch err {
+		case nil:
+			// hop out
+		default:
+			return nil, fmt.Errorf("error scanning updater: %v", err)
+		}
+		updaters[kind] = append(updaters[kind], updater)
+	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return updaters, nil
+}
+
+// eligibleUpdateOpts returns a list of update operation refs which exceed the specified
+// keep value.
+func eligibleUpdateOpts(ctx context.Context, conn *sql.DB, keep int) ([]uuid.UUID, int64, error) {
+	const (
+		// this query will return rows of UUID arrays.
+		updateOps = `SELECT updater, json_group_array(ref ORDER BY date desc) FROM update_operation GROUP BY updater;`
+	)
+
+	m := []uuid.UUID{}
+
+	rows, err := conn.QueryContext(ctx, updateOps)
+	switch err {
+	case nil:
+	default:
+		return nil, 0, fmt.Errorf("error querying for update operations: %v", err)
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		var uuids_json string
+		var updater string
+		err := rows.Scan(&updater, &uuids_json)
+		if err != nil {
+			return nil, 0, fmt.Errorf("error scanning update operations: %w", err)
+		}
+		var uuids []uuid.UUID
+		json.Unmarshal([]byte(uuids_json), &uuids)
+		m = append(m, uuids[keep:]...)
+	}
+	if rows.Err() != nil {
+		return nil, 0, rows.Err()
+	}
+
+	return m, int64(len(m)), nil
+}
+
+type cleanupFunc func(context.Context, *sql.DB, string) error
+
+func vulnCleanup(ctx context.Context, conn *sql.DB, updater string) error {
+	const (
+		deleteOrphanedVulns = `
+		DELETE FROM vuln
+			WHERE id IN (
+    	SELECT v2.id
+     	FROM vuln v2
+      	LEFT JOIN uo_vuln uvl
+        	ON v2.id = uvl.vuln
+        WHERE uvl.vuln IS NULL
+        AND v2.updater = $1
+    );
+`
+	)
+
+	ctx = zlog.ContextWithValues(ctx, "updater", updater)
+	zlog.Debug(ctx).
+		Msg("starting vuln clean up")
+	res, err := conn.ExecContext(ctx, deleteOrphanedVulns, updater)
+	if err != nil {
+		return fmt.Errorf("failed while exec'ing vuln delete: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed while exec'ing vuln delete (affected): %w", err)
+	}
+	zlog.Debug(ctx).Int64("rows affected", rows).Msg("vulns deleted")
+
+	return nil
+}
+
+func enrichmentCleanup(ctx context.Context, conn *sql.DB, updater string) error {
+	const (
+		deleteOrphanedEnrichments = `
+		DELETE FROM enrichment
+			WHERE id IN (
+    	SELECT e2.id
+     	FROM enrichment e2
+      	LEFT JOIN uo_enrich uen
+        	ON e2.id = uen.enrich
+        WHERE uen.enrich IS NULL
+        AND e2.updater = $1
+    );
+`
+	)
+
+	ctx = zlog.ContextWithValues(ctx, "updater", updater)
+	zlog.Debug(ctx).
+		Msg("starting enrichment clean up")
+	res, err := conn.ExecContext(ctx, deleteOrphanedEnrichments, updater)
+	if err != nil {
+		return fmt.Errorf("failed while exec'ing enrichment delete: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed while exec'ing enrichment delete (affected): %w", err)
+	}
+	zlog.Debug(ctx).Int64("rows affected", rows).Msg("enrichments deleted")
+
+	return nil
 }
 
 func (ms *sqliteMatcherStore) VacuumDatabase(ctx context.Context) error {
@@ -1015,8 +1222,7 @@ func (ms *sqliteMatcherStore) RecordUpdaterSetStatus(ctx context.Context, update
 		WHERE updater_name LIKE $2 || '%';`
 	)
 
-	ctx = zlog.ContextWithValues(ctx,
-		"component", "internal/vulnstore/postgres/recordUpdaterSetStatus")
+	ctx = zlog.ContextWithValues(ctx, "component", "internal/vulnstore/sqlite/recordUpdaterSetStatus")
 
 	tx, err := ms.conn.BeginTx(ctx, nil)
 	if err != nil {
