@@ -905,6 +905,19 @@ func (ms *sqliteMatcherStore) GC(ctx context.Context, count int) (int64, error) 
 	return 0, nil
 }
 
+func (ms *sqliteMatcherStore) VacuumDatabase(ctx context.Context) error {
+	zlog.Debug(ctx).Msg(">>> VacuumDatabase")
+	const (
+		vacuum = "VACUUM;"
+	)
+	_, err := ms.conn.Exec(vacuum)
+	if err != nil {
+		return fmt.Errorf("failed to vacuum database: %v", err)
+	}
+	zlog.Info(ctx).Msg("finished database vacuum")
+	return nil
+}
+
 // RecordUpdaterStatus records that an updater is up to date with vulnerabilities at this time
 func (ms *sqliteMatcherStore) RecordUpdaterStatus(ctx context.Context, updaterName string, updateTime time.Time, fingerprint driver.Fingerprint, updaterError error) error {
 	zlog.Debug(ctx).Msg(">>> RecordUpdaterStatus")
