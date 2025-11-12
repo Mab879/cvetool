@@ -21,6 +21,7 @@ type localStore struct {
 	lock      *sync.RWMutex
 }
 
+// compile check datastore.IndexerStore implementation
 var _ indexer.Indexer = (*LocalIndexerStore)(nil)
 
 // LocalIndexerStore is an implementation of indexer.Indexer.

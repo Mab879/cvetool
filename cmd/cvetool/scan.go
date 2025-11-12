@@ -24,8 +24,10 @@ import (
 	"github.com/urfave/cli/v2"
 
 	datastore "github.com/ComplianceAsCode/cvetool/datastore"
+	ds_sqlite "github.com/ComplianceAsCode/cvetool/datastore/sqlite"
 	image "github.com/ComplianceAsCode/cvetool/image"
 	output "github.com/ComplianceAsCode/cvetool/output"
+	"github.com/ComplianceAsCode/cvetool/util"
 )
 
 type EnumValue struct {
@@ -159,7 +161,7 @@ func scan(c *cli.Context) error {
 	case dbPath != "":
 	case dbURL != "":
 		var err error
-		err = datastore.DownloadDB(ctx, dbURL, "")
+		err = util.DownloadDB(ctx, dbURL, "")
 		if err != nil {
 			return fmt.Errorf("could not download database: %v", err)
 		}
@@ -175,7 +177,7 @@ func scan(c *cli.Context) error {
 		return fmt.Errorf("unable to get database path")
 	}
 
-	matcherStore, err := datastore.NewSQLiteMatcherStore(dbPath, true)
+	matcherStore, err := ds_sqlite.NewSQLiteMatcherStore(dbPath, true)
 	if err != nil {
 		return fmt.Errorf("error creating sqlite backend: %v", err)
 	}

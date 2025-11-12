@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ComplianceAsCode/cvetool/datastore"
+	ds_sqlite "github.com/ComplianceAsCode/cvetool/datastore/sqlite"
 	"github.com/quay/claircore/libvuln"
 	_ "github.com/quay/claircore/updater/defaults"
 	"github.com/urfave/cli/v2"
@@ -44,7 +44,7 @@ func update(c *cli.Context) error {
 			}
 		}
 	}
-	matcherStore, err := datastore.NewSQLiteMatcherStore(dbPath, true)
+	matcherStore, err := ds_sqlite.NewSQLiteMatcherStore(dbPath, true)
 	if err != nil {
 		return fmt.Errorf("error creating sqlite backend: %v", err)
 	}
