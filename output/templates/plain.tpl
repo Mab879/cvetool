@@ -4,7 +4,7 @@ No CVEs found.
 {{- define "found" -}}
 {{with $r := .}}{{range $id, $v := .PackageVulnerabilities}}{{range $d := $v -}}
 {{with index $r.Packages $id}}{{.Name}}	{{.Version}}{{end}}
-	{{- with index $r.Vulnerabilities $d}}	{{.Name}}
+	{{- with index $r.Vulnerabilities $d}}	{{.Name}}	{{.Severity}} / {{.NormalizedSeverity}}
 	{{- with .FixedInVersion}}	(fixed: {{.}}){{end}}{{end}}
 {{end}}{{end}}{{end}}{{end}}
 {{- /* The following is the actual bit of the template that runs per item. */ -}}
