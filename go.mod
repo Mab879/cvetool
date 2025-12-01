@@ -7,7 +7,7 @@ require (
 	github.com/doug-martin/goqu/v9 v9.19.0
 	github.com/google/go-containerregistry v0.20.7
 	github.com/google/uuid v1.6.0
-	github.com/hashicorp/go-version v1.7.0
+	github.com/hashicorp/go-version v1.8.0
 	github.com/klauspost/compress v1.18.1
 	github.com/quay/claircore v1.5.46-0.20251103030235-52da6d5c69b1
 	github.com/quay/zlog v1.1.9
