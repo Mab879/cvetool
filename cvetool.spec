@@ -24,11 +24,10 @@ export CGO_CPPFLAGS="${CPPFLAGS}"
 export CGO_CFLAGS="${CFLAGS}"
 export CGO_CXXFLAGS="${CXXFLAGS}"
 export CGO_LDFLAGS="${LDFLAGS}"
-export GOFLAGS="-buildmode=pie -trimpath -ldflags=-linkmode=external -mod=readonly -modcacherw"
+export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
 
 go mod tidy
-#go build -v -o cvetool
-go build ./cmd/cvetool
+go build -ldflags="-linkmode=external -X main.Version=%{version}-%{release}" ./cmd/cvetool
 
 %install
 install -Dm0755 %{name} %{buildroot}%{_bindir}/%{name}
