@@ -47,7 +47,9 @@ func (ms *sqliteMatcherStore) Initialized(_ context.Context) (bool, error) {
 }
 
 func (ms *sqliteMatcherStore) VacuumDatabase(ctx context.Context) error {
-	zlog.Debug(ctx).Msg(">>> VacuumDatabase")
+	ctx = zlog.ContextWithValues(ctx,
+		"component", "datastore/sqlite/matcher_store.VacuumDatabase")
+	zlog.Info(ctx).Msg("starting database vacuum")
 	const (
 		vacuum = "VACUUM;"
 	)
