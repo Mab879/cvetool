@@ -16,6 +16,35 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+const oldDatabaseThresholdDuration = 24 * time.Hour * 30
+
+// formatDatabaseAgeThreshold returns a short phrase for CLI text derived from d (e.g. "30 days", "2 days").
+func formatDatabaseAgeThreshold(d time.Duration) string {
+	if d <= 0 {
+		return "0"
+	}
+	if d%(24*time.Hour) == 0 {
+		n := d / (24 * time.Hour)
+		if n == 1 {
+			return "1 day"
+		}
+		return fmt.Sprintf("%d days", n)
+	}
+	if d%time.Hour == 0 {
+		n := d / time.Hour
+		if n == 1 {
+			return "1 hour"
+		}
+		return fmt.Sprintf("%d hours", n)
+	}
+	return d.Round(time.Second).String()
+}
+
+var allowUpdatingOldDatabaseUsage = fmt.Sprintf(
+	"Allow updating a database older than %s. Updating an old database is very slow, it is suggested to delete and create anew.",
+	formatDatabaseAgeThreshold(oldDatabaseThresholdDuration),
+)
+
 var updateCmd = &cli.Command{
 	Name:    "update",
 	Aliases: []string{"u"},
@@ -28,12 +57,17 @@ var updateCmd = &cli.Command{
 			Usage:   "where to look for the matcher DB",
 			EnvVars: []string{"DB_PATH"},
 		},
+		&cli.BoolFlag{
+			Name:  "allow-updating-old-database",
+			Usage: allowUpdatingOldDatabaseUsage,
+		},
 	},
 }
 
 func update(c *cli.Context) error {
 	ctx := c.Context
 	dbPath := c.String("db-path")
+	allowUpdatingOldDatabase := c.Bool("allow-updating-old-database")
 	if dbPath == "" {
 		var err error
 		dbPath, err = getDefaultDBPath()
@@ -80,6 +114,36 @@ func update(c *cli.Context) error {
 				return nil
 			},
 		},
+	}
+
+	// Check last update time
+	updateOps, err := matcherStore.GetUpdateOperations(ctx, driver.VulnerabilityKind)
+	if err != nil {
+		return fmt.Errorf("error getting update operations: %v", err)
+	}
+
+	// Find the most recent update time across all updaters
+	var lastUpdate time.Time
+	for _, ops := range updateOps {
+		if len(ops) > 0 {
+			// ops are sorted by date descending, so first element is most recent
+			if ops[0].Date.After(lastUpdate) {
+				lastUpdate = ops[0].Date
+			}
+		}
+	}
+
+	if !lastUpdate.IsZero() {
+		fmt.Printf("Last update: %s (%s ago)\n", lastUpdate.Format(time.RFC1123), time.Since(lastUpdate).Round(time.Second))
+		if time.Since(lastUpdate) > oldDatabaseThresholdDuration && !allowUpdatingOldDatabase {
+			return fmt.Errorf(
+				"Database more than %s old, refusing to update. Delete the database at %s and run this command again.",
+				formatDatabaseAgeThreshold(oldDatabaseThresholdDuration),
+				dbPath,
+			)
+		}
+	} else {
+		fmt.Println("No previous updates found in database")
 	}
 
 	lv, err := libvuln.New(ctx, matcherOpts)
