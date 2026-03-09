@@ -8,7 +8,10 @@ import (
 	"time"
 
 	ds_sqlite "github.com/ComplianceAsCode/cvetool/datastore/sqlite"
+	"github.com/quay/claircore"
 	"github.com/quay/claircore/libvuln"
+	"github.com/quay/claircore/libvuln/driver"
+	"github.com/quay/claircore/rhel/vex"
 	_ "github.com/quay/claircore/updater/defaults"
 	"github.com/urfave/cli/v2"
 )
@@ -50,7 +53,7 @@ func update(c *cli.Context) error {
 	}
 
 	cl := &http.Client{
-		Timeout: 2 * time.Minute,
+		Timeout: 10 * time.Minute,
 	}
 
 	matcherOpts := &libvuln.Options{
@@ -64,6 +67,16 @@ func update(c *cli.Context) error {
 		MatcherNames: []string{},
 		// Limit CVE feed and enrichment updaters to RHEL ecosystem
 		UpdaterSets: []string{"rhel-vex", "clair.cvss"},
+		UpdaterConfigs: map[string]driver.ConfigUnmarshaler{
+			"rhel-vex": func(v any) error {
+				cfg, ok := v.(*vex.FactoryConfig)
+				if !ok {
+					return fmt.Errorf("unexpected config type: %T", v)
+				}
+				cfg.CompressedFileTimeout = claircore.Duration(10 * time.Minute)
+				return nil
+			},
+		},
 	}
 
 	lv, err := libvuln.New(ctx, matcherOpts)
