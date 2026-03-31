@@ -59,6 +59,10 @@ func NewDockerLocalImage(ctx context.Context, exportDir string, importDir string
 				layerFilePath = filepath.Join(importDir, "sha256:"+sha)
 			}
 
+			if !strings.HasPrefix(filepath.Clean(layerFilePath), filepath.Clean(importDir)+string(os.PathSeparator)) {
+				return nil, fmt.Errorf("invalid tar entry path %q: resolves outside import directory", hdr.Name)
+			}
+
 			zlog.Debug(ctx).Str("layerFilePath", layerFilePath).Msg("found .tar file")
 
 			layerFile, err := os.OpenFile(layerFilePath, os.O_CREATE|os.O_RDWR, os.FileMode(0600))
