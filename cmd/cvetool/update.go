@@ -69,11 +69,14 @@ func update(c *cli.Context) error {
 		UpdaterSets: []string{"rhel-vex", "clair.cvss"},
 		UpdaterConfigs: map[string]driver.ConfigUnmarshaler{
 			"rhel-vex": func(v any) error {
-				cfg, ok := v.(*vex.FactoryConfig)
-				if !ok {
+				switch cfg := v.(type) {
+				case *vex.FactoryConfig:
+					cfg.CompressedFileTimeout = claircore.Duration(10 * time.Minute)
+				case *vex.UpdaterConfig:
+					// No additional configuration needed for individual updaters.
+				default:
 					return fmt.Errorf("unexpected config type: %T", v)
 				}
-				cfg.CompressedFileTimeout = claircore.Duration(10 * time.Minute)
 				return nil
 			},
 		},
