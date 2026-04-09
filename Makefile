@@ -10,3 +10,8 @@ build: cvetool
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo dev)
 cvetool: vendor
 	go build -ldflags "-X main.Version=${VERSION}" ./cmd/...
+
+.PHONY: clean
+clean:
+	rm -f cvetool
+	rm -rf vendor
