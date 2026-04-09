@@ -134,7 +134,7 @@ func (m *LocalIndexerStore) IndexFiles(ctx context.Context, files []claircore.Fi
 }
 
 // AffectedManifests implements base method.
-func (m *LocalIndexerStore) AffectedManifests(_ context.Context, _ claircore.Vulnerability, _ claircore.CheckVulnernableFunc) ([]claircore.Digest, error) {
+func (m *LocalIndexerStore) AffectedManifests(_ context.Context, _ claircore.Vulnerability) ([]claircore.Digest, error) {
 	return nil, nil
 }
 
