@@ -15,3 +15,7 @@ cvetool: vendor
 clean:
 	rm -f cvetool
 	rm -rf vendor
+
+.PHONY: e2e
+e2e: cvetool
+	bash tests/e2e.sh
