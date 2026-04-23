@@ -12,7 +12,7 @@ require (
 	github.com/quay/claircore v1.5.52
 	github.com/quay/zlog v1.1.9
 	github.com/remind101/migrate v0.0.0-20170729031349-52c1edff7319
-	github.com/rs/zerolog v1.35.0
+	github.com/rs/zerolog v1.35.1
 	github.com/urfave/cli/v2 v2.27.7
 	modernc.org/sqlite v1.49.1
 )
