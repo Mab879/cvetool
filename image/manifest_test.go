@@ -14,6 +14,36 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
+func TestManifestFromLocal_rejectsTarSlipPaths(t *testing.T) {
+	tmp := t.TempDir()
+	tarPath := filepath.Join(tmp, "export.tar")
+	f, err := os.Create(tarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tw := tar.NewWriter(f)
+	hdr := &tar.Header{
+		Name:     "../../../outside/evil.tar",
+		Mode:     0600,
+		Size:     0,
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = ManifestFromLocal(context.Background(), tarPath)
+	if err == nil {
+		t.Fatal("expected error for path traversal in tar entry name")
+	}
+}
+
 // writeTarFromTxtar converts a txtar-like archive into a tar file on disk.
 func writeTarFromTxtar(t *testing.T, txtarPath string) string {
 	t.Helper()
