@@ -232,6 +232,11 @@ func ManifestFromLocal(ctx context.Context, exportDir string) (*claircore.Manife
 		if err != nil {
 			return nil, fmt.Errorf("unable to read layer: %w", err)
 		}
+		// Reject path traversal (zip slip) entries.
+		cleanName := filepath.Clean(filepath.FromSlash(hdr.Name))
+		if !filepath.IsLocal(cleanName) {
+			return nil, fmt.Errorf("invalid tar entry path %q", hdr.Name)
+		}
 		start, _ := f.Seek(0, io.SeekCurrent)
 		for i, l := range m.Layers {
 			ld, err := claircore.ParseDigest(l.Digest)
@@ -241,7 +246,7 @@ func ManifestFromLocal(ctx context.Context, exportDir string) (*claircore.Manife
 
 			ldb := make([]byte, hex.EncodedLen(len(ld.Checksum())))
 			hex.Encode(ldb, ld.Checksum())
-			if hdr.Name == filepath.Join("blobs", ld.Algorithm(), string(ldb)) {
+			if cleanName == filepath.Join("blobs", ld.Algorithm(), string(ldb)) {
 				ra := io.NewSectionReader(f, start, hdr.Size)
 				var rAt io.ReaderAt
 				switch l.MediaType {
