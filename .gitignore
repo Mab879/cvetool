@@ -5,3 +5,4 @@
 /vendor
 /cvetool
 /*.db*
+/cvetool*.tar.*
