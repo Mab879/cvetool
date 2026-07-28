@@ -25,8 +25,6 @@ func ManifestFromFilesystem(ctx context.Context, rootDir string) (*claircore.Man
 	if err != nil {
 		return nil, err
 	}
-	l.Close()
-
 	return &claircore.Manifest{
 		Hash:   digest,
 		Layers: []*claircore.Layer{l},
