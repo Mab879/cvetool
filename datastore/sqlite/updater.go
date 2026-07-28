@@ -124,10 +124,17 @@ func (ms *sqliteMatcherStore) RecordUpdaterSetStatus(ctx context.Context, update
 	}
 
 	ra, err := tag.RowsAffected()
-	zlog.Debug(ctx).
-		Str("factory", updaterSet).
-		Int64("rowsAffected", ra).
-		Msg("status updated for factory updaters")
+	if err != nil {
+		zlog.Warn(ctx).
+			Err(err).
+			Str("factory", updaterSet).
+			Msg("could not determine rows affected for factory updaters status update")
+	} else {
+		zlog.Debug(ctx).
+			Str("factory", updaterSet).
+			Int64("rowsAffected", ra).
+			Msg("status updated for factory updaters")
+	}
 
 	return nil
 }
