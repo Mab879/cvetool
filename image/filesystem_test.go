@@ -74,7 +74,7 @@ func TestManifestFromFilesystem_relativePathResolvesCorrectly(t *testing.T) {
 	}
 
 	found := false
-	fs.WalkDir(sys, ".", func(p string, d fs.DirEntry, err error) error {
+	if err := fs.WalkDir(sys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -82,7 +82,9 @@ func TestManifestFromFilesystem_relativePathResolvesCorrectly(t *testing.T) {
 			found = true
 		}
 		return nil
-	})
+	}); err != nil {
+		t.Fatalf("WalkDir: %v", err)
+	}
 	if !found {
 		t.Fatal("layer FS did not find var/lib/rpm/rpmdb.sqlite — relative path was not resolved correctly")
 	}
