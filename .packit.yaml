@@ -4,7 +4,8 @@ specfile_path: cvetool.spec
 upstream_tag_template: v{version}
 
 jobs:
-  - job: copr_build
+  - &fedora
+    job: copr_build
     identifier: fedora
     trigger: pull_request
     enable_net: True
@@ -17,7 +18,15 @@ jobs:
       fix-spec-file:
         - go_vendor_archive create cvetool.spec
 
-  - job: copr_build
+  - <<: *fedora
+    trigger: commit
+    branch: main
+    preserve_project: True
+    targets:
+      - fedora-stable-x86_64
+
+  - &rhel
+    job: copr_build
     trigger: pull_request
     identifier: rhel
     enable_net: True
@@ -36,37 +45,8 @@ jobs:
         # We wrap the tar command in bash -c so $PACKIT_PROJECT_VERSION is evaluated
         - bash -c "tar -cjvf cvetool-${PACKIT_PROJECT_VERSION}-vendor.tar.bz2 vendor/"
 
-  - job: copr_build
-    identifier: fedora
-    trigger: commit
-    branch: main
-    preserve_project: True
-    enable_net: True
-    srpm_build_deps:
-      - golang
-      - go-vendor-tools
-    actions:
-      fix-spec-file:
-        - go_vendor_archive create cvetool.spec
-    targets:
-      - fedora-stable-x86_64
 
-  - job: copr_build
-    identifier: rhel
+  - <<: *rhel
     trigger: commit
     branch: main
     preserve_project: True
-    enable_net: True
-    targets:
-      - rhel-10-x86_64
-      - rhel-9-x86_64
-      - epel-10-x86_64
-      - epel-9-x86_64
-    srpm_build_deps:
-      - golang
-    actions:
-      fix-spec-file:
-        - go mod tidy
-        - go mod vendor
-        # We wrap the tar command in bash -c so $PACKIT_PROJECT_VERSION is evaluated
-        - bash -c "tar -cjvf cvetool-${PACKIT_PROJECT_VERSION}-vendor.tar.bz2 vendor/"
