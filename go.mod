@@ -15,7 +15,7 @@ require (
 	github.com/rs/zerolog v1.35.1
 	github.com/urfave/cli/v2 v2.27.7
 	golang.org/x/tools v0.48.0
-	modernc.org/sqlite v1.54.0
+	modernc.org/sqlite v1.55.0
 )
 
 require (
