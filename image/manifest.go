@@ -280,7 +280,7 @@ func ManifestFromLocal(ctx context.Context, exportDir string) (*claircore.Manife
 					return nil, fmt.Errorf("unsupported layer media type: %s", l.MediaType)
 				}
 				layer := &claircore.Layer{Hash: ld}
-				err = layer.Init(context.Background(), &claircore.LayerDescription{
+				err = layer.Init(ctx, &claircore.LayerDescription{
 					Digest:    ld.String(),
 					MediaType: l.MediaType,
 				}, rAt)
