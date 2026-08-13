@@ -221,7 +221,10 @@ func ManifestFromLocal(ctx context.Context, exportDir string) (*claircore.Manife
 
 	// We have to revert to tar.NewReader() because tarfs.New() doesn't support
 	// seeking.
-	f.Seek(0, io.SeekStart)
+	_, err = f.Seek(0, io.SeekStart)
+	if err != nil {
+		return nil, fmt.Errorf("unable to seek in manifest: %w", err)
+	}
 	tr := tar.NewReader(f)
 	out.Layers = make([]*claircore.Layer, len(m.Layers))
 	for {
