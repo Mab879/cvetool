@@ -11,4 +11,4 @@ expression = "(MIT WITH LicenseRef-scancode-musl-exception) AND (LicenseRef-scan
 [[licensing.licenses]]
 path = "vendor/modernc.org/sqlite/SQLITE-LICENSE"
 sha256sum = "8438c9c89b849131ead81d5435cb97fcf052df5b0b286dda8a2d4c29e6cb3fd0"
-expression = "LicenseRef-scancode-public-domain"
+expression = "blessing"
