@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -218,7 +219,7 @@ func scan(c *cli.Context) error {
 		Locker: NewLocalLockSource(),
 		// Limit indexers to RHEL ecosystem
 		Ecosystems: []*indexer.Ecosystem{
-			rhel.NewEcosystem(ctx),
+			mappedRHELEcosystem(ctx),
 		},
 		FetchArena: fa,
 	}
@@ -288,4 +289,21 @@ func scan(c *cli.Context) error {
 		return nil
 	}
 	return nil
+}
+
+func mappedRHELEcosystem(ctx context.Context) *indexer.Ecosystem {
+	ecosystem := rhel.NewEcosystem(ctx)
+	stockPackageScanners := ecosystem.PackageScanners
+	ecosystem.PackageScanners = func(ctx context.Context) ([]indexer.PackageScanner, error) {
+		scanners, err := stockPackageScanners(ctx)
+		if err != nil {
+			return nil, err
+		}
+		mapped := make([]indexer.PackageScanner, 0, len(scanners))
+		for _, scanner := range scanners {
+			mapped = append(mapped, NewMappedPackageScanner(scanner, packageRepositoryMapping()))
+		}
+		return mapped, nil
+	}
+	return ecosystem
 }
